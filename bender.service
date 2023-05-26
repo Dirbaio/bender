@@ -1,0 +1,15 @@
+[Unit]
+Description=bender
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=ci
+WorkingDirectory=/home/ci
+ExecStart=/home/ci/bender
+
+[Install]
+WantedBy=multi-user.target

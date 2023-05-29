@@ -112,6 +112,11 @@ func (s *Service) handleWebhook(r *http.Request) error {
 			log.Printf("branch '%s' is from merge queue, using target branch '%s' for cache", branch, cacheBranch)
 		}
 
+		if e.HeadCommit == nil {
+			// this is a branch deletion.
+			return nil
+		}
+
 		events = append(events, &Event{
 			Event: "push",
 			Attributes: map[string]string{

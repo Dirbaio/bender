@@ -194,6 +194,42 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 		return err
 	}
 
+	mounts := []specs.Mount{
+		{
+			Type:        "none",
+			Source:      home,
+			Destination: "/ci",
+			Options:     []string{"rbind"},
+		},
+		{
+			Type:        "none",
+			Source:      filepath.Join(cacheDir, cacheName),
+			Destination: "/ci/cache",
+			Options:     []string{"rbind"},
+		},
+		{
+			Type:        "none",
+			Source:      filepath.Join(s.config.DataDir, "resolv.conf"),
+			Destination: "/etc/resolv.conf",
+			Options:     []string{"rbind", "ro"},
+		},
+	}
+
+	if job.Trusted {
+		secretPath := filepath.Join(s.config.DataDir, "secrets", *job.Repo.Owner.Login, *job.Repo.Name)
+		err = os.MkdirAll(secretPath, 0700)
+		if err != nil {
+			return err
+		}
+
+		mounts = append(mounts, specs.Mount{
+			Type:        "none",
+			Source:      secretPath,
+			Destination: "/ci/secrets",
+			Options:     []string{"rbind"},
+		})
+	}
+
 	container, err := s.containerd.NewContainer(ctx, fmt.Sprintf("job-%s", job.ID),
 		containerd.WithNewSnapshot(fmt.Sprintf("job-%s-rootfs", job.ID), image),
 		containerd.WithNewSpec(
@@ -207,26 +243,7 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 			}),
 			oci.WithNamespacedCgroup(),
 			oci.WithHostNamespace(specs.NetworkNamespace), // TODO network sandboxing
-			oci.WithMounts([]specs.Mount{
-				{
-					Type:        "none",
-					Source:      home,
-					Destination: "/ci",
-					Options:     []string{"rbind"},
-				},
-				{
-					Type:        "none",
-					Source:      filepath.Join(cacheDir, cacheName),
-					Destination: "/ci/cache",
-					Options:     []string{"rbind"},
-				},
-				{
-					Type:        "none",
-					Source:      filepath.Join(s.config.DataDir, "resolv.conf"),
-					Destination: "/etc/resolv.conf",
-					Options:     []string{"rbind", "ro"},
-				},
-			}),
+			oci.WithMounts(mounts),
 		),
 	)
 	if err != nil {

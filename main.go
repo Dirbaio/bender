@@ -50,6 +50,9 @@ type Event struct {
 	// Example for PR 1234, which targets the foo branch:
 	//    "pr-1234", "branch-foo", "branch-main"
 	Cache []string
+
+	// If true, secrets will be mounted.
+	Trusted bool
 }
 
 type Job struct {

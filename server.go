@@ -117,6 +117,7 @@ func (s *Service) handleWebhook(r *http.Request) error {
 				fmt.Sprintf("branch-%s", branch),
 				fmt.Sprintf("branch-%s", *e.Repo.DefaultBranch),
 			},
+			Trusted: true,
 		})
 	case *github.PullRequestEvent:
 		if *e.Action == "opened" || *e.Action == "synchronize" {
@@ -134,6 +135,9 @@ func (s *Service) handleWebhook(r *http.Request) error {
 					fmt.Sprintf("branch-%s", *e.PullRequest.Base.Ref),
 					fmt.Sprintf("branch-%s", *e.Repo.DefaultBranch),
 				},
+
+				// Trusted if the PR is not from a fork.
+				Trusted: *e.PullRequest.Head.Repo.Owner.Login == *e.Repo.Owner.Login,
 			})
 		}
 	}

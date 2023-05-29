@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -668,7 +669,11 @@ func (s *Service) Run() {
 }
 
 func main() {
-	configData, err := os.ReadFile("config.yaml")
+	var configFlag = flag.String("c", "config.yaml", "path to config.yaml")
+	flag.Parse()
+
+	log.Printf("loading config from %s", *configFlag)
+	configData, err := os.ReadFile(*configFlag)
 	if err != nil {
 		log.Fatal(err)
 	}

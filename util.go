@@ -26,6 +26,18 @@ func tryExec(cmd string, args ...string) {
 	}
 }
 
+func doExec(cmd string, args ...string) error {
+	log.Printf("Executing command: %s %s", cmd, strings.Join(args, " "))
+	c := exec.Command(cmd, args...)
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	err := c.Run()
+	if err != nil {
+		return errors.Errorf("Failed to execute command: %w", err)
+	}
+	return nil
+}
+
 func nopanic(fn func() error) (err error) {
 	// This very convoluted code is because there's no way to distinguish
 	// between `panic(nil)` and no panic with just `recover()` (both return nil)

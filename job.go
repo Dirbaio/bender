@@ -129,6 +129,44 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 
 	log.Println("creating container")
 
+	// Create cache dir
+	cacheDir := filepath.Join(s.config.DataDir, "cache", *job.Repo.Owner.Login, *job.Repo.Name, job.Name)
+	err = os.MkdirAll(cacheDir, 0700)
+	if err != nil {
+		return err
+	}
+
+	// find existing cache
+	cacheBaseName := ""
+	for _, cache := range job.Cache {
+		log.Printf("checking cache %s", cache)
+		if stat, err := os.Stat(filepath.Join(cacheDir, cache)); err == nil && stat.IsDir() {
+			cacheBaseName = cache
+			break
+		}
+	}
+	cacheName := fmt.Sprintf("job-%s", job.ID)
+	if cacheBaseName == "" {
+		log.Printf("no base cache found")
+		err = doExec("btrfs", "subvolume", "create", filepath.Join(cacheDir, cacheName))
+	} else {
+		log.Printf("using base cache %s", cacheBaseName)
+		err = doExec("btrfs", "subvolume", "snapshot", filepath.Join(cacheDir, cacheBaseName), filepath.Join(cacheDir, cacheName))
+	}
+	if err != nil {
+		return err
+	}
+	doDeleteCache := true
+	defer func() {
+		if doDeleteCache {
+			log.Printf("deleting cache %s", cacheName)
+			err := doExec("btrfs", "subvolume", "delete", filepath.Join(cacheDir, cacheName))
+			if err != nil {
+				log.Printf("error deleting cache: %v", err)
+			}
+		}
+	}()
+
 	// Create home dir
 	home := filepath.Join(s.config.DataDir, "jobs", job.ID)
 	err = os.MkdirAll(home, 0700)
@@ -178,7 +216,7 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 				},
 				{
 					Type:        "none",
-					Source:      filepath.Join(s.config.DataDir, "cache"),
+					Source:      filepath.Join(cacheDir, cacheName),
 					Destination: "/ci/cache",
 					Options:     []string{"rbind"},
 				},
@@ -236,6 +274,25 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 	if status.ExitCode() != 0 {
 		return errors.Errorf("exited with code %d", status.ExitCode())
 	}
+
+	primary := job.Cache[0]
+	log.Printf("committing cache %s to primary %s", cacheName, primary)
+	primaryPath := filepath.Join(cacheDir, primary)
+	if _, err := os.Stat(primaryPath); err == nil {
+		err = doExec("btrfs", "subvolume", "delete", primaryPath)
+		if err != nil {
+			log.Printf("failed to remove old primary cache %s: %v. Trying `rm -rf`", primaryPath, err)
+			err = os.RemoveAll(primaryPath)
+			if err != nil {
+				log.Printf("failed to remove old primary cache %s with `rm -rf`: %v", primaryPath, err)
+			}
+		}
+	}
+	err = os.Rename(filepath.Join(cacheDir, cacheName), primaryPath)
+	if err != nil {
+		log.Printf("failed to rename cache %s to %s: %v", filepath.Join(cacheDir, cacheName), primaryPath, err)
+	}
+	doDeleteCache = false
 
 	return nil
 }

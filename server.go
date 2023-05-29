@@ -113,6 +113,10 @@ func (s *Service) handleWebhook(r *http.Request) error {
 			Repo:           getRepoFromPushEvent(e),
 			SHA:            *e.HeadCommit.ID,
 			InstallationID: *e.Installation.ID,
+			Cache: []string{
+				fmt.Sprintf("branch-%s", branch),
+				fmt.Sprintf("branch-%s", *e.Repo.DefaultBranch),
+			},
 		})
 	case *github.PullRequestEvent:
 		if *e.Action == "opened" || *e.Action == "synchronize" {
@@ -125,6 +129,11 @@ func (s *Service) handleWebhook(r *http.Request) error {
 				CloneURL:       *e.PullRequest.Head.Repo.CloneURL,
 				SHA:            *e.PullRequest.Head.SHA,
 				InstallationID: *e.Installation.ID,
+				Cache: []string{
+					fmt.Sprintf("pr-%d", *e.PullRequest.ID),
+					fmt.Sprintf("branch-%s", *e.PullRequest.Base.Ref),
+					fmt.Sprintf("branch-%s", *e.Repo.DefaultBranch),
+				},
 			})
 		}
 	}

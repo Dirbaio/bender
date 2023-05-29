@@ -43,6 +43,13 @@ type Event struct {
 	CloneURL       string
 	SHA            string
 	InstallationID int64
+
+	// Cache[0] is the primary cache, Cache[1:] are secondary caches
+	// that will be cloned into the primary cache if the primary cache
+	// does not exist.
+	// Example for PR 1234, which targets the foo branch:
+	//    "pr-1234", "branch-foo", "branch-main"
+	Cache []string
 }
 
 type Job struct {

@@ -9,6 +9,8 @@
 - nftables
 - containerd
 - Linux kernel v5.13+ (for nftables cgroupv2 matching)
+- `data_dir` must be in a BTRFS filesystem.
+  - If you're running as non-root, it must be mounted with the `user_subvol_rm_allowed` option.
 
 ## Getting Started
 

@@ -105,6 +105,13 @@ func (s *Service) handleWebhook(r *http.Request) error {
 			log.Printf("unknown ref '%s'", *e.Ref)
 			return nil
 		}
+
+		cacheBranch := branch
+		if m := regexp.MustCompile("^gh-readonly-queue/([^/]+)/").FindStringSubmatch(branch); m != nil {
+			cacheBranch = m[1]
+			log.Printf("branch '%s' is from merge queue, using target branch '%s' for cache", branch, cacheBranch)
+		}
+
 		events = append(events, &Event{
 			Event: "push",
 			Attributes: map[string]string{
@@ -114,7 +121,7 @@ func (s *Service) handleWebhook(r *http.Request) error {
 			SHA:            *e.HeadCommit.ID,
 			InstallationID: *e.Installation.ID,
 			Cache: []string{
-				fmt.Sprintf("branch-%s", branch),
+				fmt.Sprintf("branch-%s", cacheBranch),
 				fmt.Sprintf("branch-%s", *e.Repo.DefaultBranch),
 			},
 			Trusted: true,

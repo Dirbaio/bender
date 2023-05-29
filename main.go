@@ -682,7 +682,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, subdir := range []string{"logs", "fifo"} {
+	for _, subdir := range []string{"logs", "fifo", "cache"} {
 		err = os.MkdirAll(filepath.Join(config.DataDir, subdir), 0700)
 		if err != nil {
 			log.Fatal(err)

@@ -130,7 +130,7 @@ func (s *Service) handleWebhook(r *http.Request) error {
 				SHA:            *e.PullRequest.Head.SHA,
 				InstallationID: *e.Installation.ID,
 				Cache: []string{
-					fmt.Sprintf("pr-%d", *e.PullRequest.ID),
+					fmt.Sprintf("pr-%d", *e.PullRequest.Number),
 					fmt.Sprintf("branch-%s", *e.PullRequest.Base.Ref),
 					fmt.Sprintf("branch-%s", *e.Repo.DefaultBranch),
 				},

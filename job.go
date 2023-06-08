@@ -285,13 +285,6 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 
 	status := <-statusC
 
-	if err := status.Error(); err != nil {
-		return err
-	}
-	if status.ExitCode() != 0 {
-		return errors.Errorf("exited with code %d", status.ExitCode())
-	}
-
 	primary := job.Cache[0]
 	log.Printf("committing cache %s to primary %s", cacheName, primary)
 	primaryPath := filepath.Join(cacheDir, primary)
@@ -311,5 +304,11 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 	}
 	doDeleteCache = false
 
+	if err := status.Error(); err != nil {
+		return err
+	}
+	if status.ExitCode() != 0 {
+		return errors.Errorf("exited with code %d", status.ExitCode())
+	}
 	return nil
 }

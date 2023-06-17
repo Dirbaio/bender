@@ -139,6 +139,7 @@ func (s *Service) handleWebhook(r *http.Request) error {
 					"branch": *e.PullRequest.Base.Ref,
 				},
 				Repo:           e.Repo,
+				PullRequest:    e.PullRequest,
 				CloneURL:       *e.PullRequest.Head.Repo.CloneURL,
 				SHA:            *e.PullRequest.Head.SHA,
 				InstallationID: *e.Installation.ID,

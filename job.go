@@ -314,6 +314,11 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 	}
 	doDeleteCache = false
 
+	err = s.postComment(ctx, job, gh, home)
+	if err != nil {
+		log.Printf("failed to post github comment: %v", err)
+	}
+
 	if err := status.Error(); err != nil {
 		return err
 	}
@@ -321,4 +326,47 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 		return errors.Errorf("exited with code %d", status.ExitCode())
 	}
 	return nil
+}
+
+func (s *Service) postComment(ctx context.Context, job *Job, gh *github.Client, home string) error {
+	if job.PullRequest == nil {
+		return nil
+	}
+
+	commentPath := filepath.Join(home, "comment.md")
+	stat, err := os.Stat(commentPath)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	if stat.IsDir() {
+		return nil
+	}
+
+	comment, err := os.ReadFile(commentPath)
+	if err != nil {
+		return err
+	}
+
+	// post comment to github
+	_, _, err = gh.Issues.CreateComment(ctx, *job.Repo.Owner.Login, *job.Repo.Name, *job.PullRequest.Number, &github.IssueComment{
+		Body: github.String(string(comment)),
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// recursively remove all symlinks in a directory
+func removeSymlinks(path string) error {
+	return filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+		if info.Mode()&os.ModeSymlink != os.ModeSymlink {
+			return nil
+		}
+		return os.Remove(path)
+	})
 }

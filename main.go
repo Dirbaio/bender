@@ -44,6 +44,7 @@ type Event struct {
 	Attributes map[string]string
 
 	Repo           *github.Repository
+	PullRequest    *github.PullRequest
 	CloneURL       string
 	SHA            string
 	InstallationID int64

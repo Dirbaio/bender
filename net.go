@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/miekg/dns"
@@ -36,7 +37,7 @@ func domainMatches(domain string, pattern string) bool {
 }
 
 func (s *Service) domainAllowed(domain string) bool {
-	for _, d := range s.config.AllowedDomains {
+	for _, d := range s.config.NetSandbox.AllowedDomains {
 		if domainMatches(domain, d) {
 			return true
 		}
@@ -91,6 +92,8 @@ func (s *Service) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 func (s *Service) netRun() {
+	os.WriteFile(filepath.Join(s.config.DataDir, "resolv.conf"), []byte("nameserver 127.0.0.93"), 0644)
+
 	s.setupNftables()
 
 	// attach request handler func

@@ -207,12 +207,22 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 			Destination: "/ci/cache",
 			Options:     []string{"rbind"},
 		},
-		{
+	}
+
+	if s.config.NetSandbox != nil {
+		mounts = append(mounts, specs.Mount{
 			Type:        "none",
 			Source:      filepath.Join(s.config.DataDir, "resolv.conf"),
 			Destination: "/etc/resolv.conf",
 			Options:     []string{"rbind", "ro"},
-		},
+		})
+	} else {
+		mounts = append(mounts, specs.Mount{
+			Type:        "none",
+			Source:      "/etc/resolv.conf",
+			Destination: "/etc/resolv.conf",
+			Options:     []string{"rbind", "ro"},
+		})
 	}
 
 	if job.Trusted {

@@ -13,12 +13,16 @@ import (
 )
 
 type Config struct {
-	DataDir        string       `yaml:"data_dir"`
-	ExternalURL    string       `yaml:"external_url"`
-	ListenPort     int          `yaml:"listen_port"`
-	AllowedDomains []string     `yaml:"allowed_domains"`
-	Image          string       `yaml:"image"`
-	Github         GithubConfig `yaml:"github"`
+	DataDir     string            `yaml:"data_dir"`
+	ExternalURL string            `yaml:"external_url"`
+	ListenPort  int               `yaml:"listen_port"`
+	NetSandbox  *NetSandboxConfig `yaml:"net_sandbox"`
+	Image       string            `yaml:"image"`
+	Github      GithubConfig      `yaml:"github"`
+}
+
+type NetSandboxConfig struct {
+	AllowedDomains []string `yaml:"allowed_domains"`
 }
 
 type GithubConfig struct {
@@ -88,8 +92,6 @@ func main() {
 		}
 	}
 
-	os.WriteFile(filepath.Join(config.DataDir, "resolv.conf"), []byte("nameserver 127.0.0.93"), 0644)
-
 	cntd, err := containerd.New("/run/containerd/containerd.sock")
 	if err != nil {
 		log.Fatal(err)
@@ -101,6 +103,9 @@ func main() {
 		runningJobs: make(map[string]struct{}),
 	}
 
-	go s.netRun()
+	if s.config.NetSandbox != nil {
+		go s.netRun()
+	}
+
 	s.serverRun()
 }

@@ -43,9 +43,10 @@ external_url: https://bender.example.com  # replace
 data_dir: data
 listen_port: 8000 
 image: embassy.dev/ci:latest
-allowed_domains:
-- '*.github.com'
-- '*.githubusercontent.com'
+net_sandbox:
+  allowed_domains:
+  - '*.github.com'
+  - '*.githubusercontent.com'
 github:
   webhook_secret: REPLACE_ME_WITH_YOUR_SECRET  # replace
   app_id: 321321  # replace

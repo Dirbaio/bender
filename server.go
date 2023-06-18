@@ -214,38 +214,32 @@ func (s *Service) handleEvent(ctx context.Context, gh *github.Client, event *Eve
 			return err
 		}
 
+		meta, err := parseMeta(content)
+		if err != nil {
+			log.Printf("failed to parse meta for file '%s': %v", *f.Name, err)
+			continue
+		}
+
 		matched := false
-	line:
-		for _, line := range strings.Split(content, "\n") {
-			if directive, ok := strings.CutPrefix(line, "##"); ok {
-				fields := strings.Fields(directive)
-				if len(fields) == 0 {
-					continue
-				}
 
-				switch fields[0] {
-				case "on":
-					if len(fields) < 2 {
-						log.Printf("warning: missing event in 'on' directive '%s'", directive)
-						continue line
-					}
+		for _, me := range meta.Events {
+			if me.Event != event.Event {
+				continue
+			}
 
-					if fields[1] != event.Event {
-						continue line
-					}
-
-					for _, condition := range fields[2:] {
-						if !conditionMatches(condition, event.Attributes) {
-							continue line
-						}
-					}
-
-					matched = true
-
-				default:
-					log.Printf("warning: unknown directive '%s'", fields[0])
+			ok := true
+			for _, condition := range me.Conditions {
+				if !condition.matches(event.Attributes) {
+					ok = false
+					break
 				}
 			}
+			if !ok {
+				continue
+			}
+
+			matched = true
+			break
 		}
 
 		if matched {
@@ -263,41 +257,4 @@ func (s *Service) handleEvent(ctx context.Context, gh *github.Client, event *Eve
 	}
 
 	return nil
-}
-
-func conditionMatches(condition string, attributes map[string]string) bool {
-	re := regexp.MustCompile("^([a-zA-Z0-9_]+)(=|!=|~=|!~=)(.*)$")
-	m := re.FindSubmatch([]byte(condition))
-	if m == nil {
-		log.Printf("warning: invalid condition '%s'", condition)
-	}
-
-	key := string(m[1])
-	op := string(m[2])
-	val := string(m[3])
-
-	log.Print(key, op, val)
-
-	switch op {
-	case "=":
-		return attributes[key] == val
-	case "!=":
-		return attributes[key] != val
-	case "~=":
-		ok, err := regexp.MatchString(fmt.Sprintf("^%s$", val), attributes[key])
-		if err != nil {
-			log.Printf("warning: invalid regexp in condition '%s': %v", condition, err)
-			return false
-		}
-		return ok
-	case "!~=":
-		ok, err := regexp.MatchString(fmt.Sprintf("^%s$", val), attributes[key])
-		if err != nil {
-			log.Printf("warning: invalid regexp in condition '%s': %v", condition, err)
-			return false
-		}
-		return !ok
-	default:
-		panic("unreachable")
-	}
 }

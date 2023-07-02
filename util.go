@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"log"
@@ -123,28 +122,6 @@ func getRepoFromPushEvent(e *github.PushEvent) *github.Repository {
 func is404(err error) bool {
 	var ghErr *github.ErrorResponse
 	return errors.As(err, &ghErr) && ghErr.Response.StatusCode == 404
-}
-
-func (s *Service) getRepoToken(ctx context.Context, installationID int64, repositoryID int64) (string, error) {
-	itr, err := ghinstallation.New(http.DefaultTransport, s.config.Github.AppID, installationID, []byte(s.config.Github.PrivateKey))
-	itr.InstallationTokenOptions = &github.InstallationTokenOptions{
-		RepositoryIDs: []int64{repositoryID},
-		Permissions: &github.InstallationPermissions{
-			Metadata: github.String("read"),
-			Contents: github.String("read"),
-		},
-	}
-
-	if err != nil {
-		return "", errors.Errorf("Failed to create ghinstallation: %w", err)
-	}
-
-	token, err := itr.Token(ctx)
-	if err != nil {
-		return "", errors.Errorf("Failed to get repo token: %w", err)
-	}
-
-	return token, nil
 }
 
 func (s *Service) githubClient(installationID int64) (*github.Client, error) {

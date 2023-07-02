@@ -132,7 +132,9 @@ func unstring(s string) (string, error) {
 }
 
 type Meta struct {
-	Events []MetaEvent
+	Events          []MetaEvent
+	Permissions     map[string]string
+	PermissionRepos []string
 }
 
 type MetaEvent struct {
@@ -141,7 +143,11 @@ type MetaEvent struct {
 }
 
 func parseMeta(content string) (*Meta, error) {
-	var res Meta
+	res := Meta{
+		Events:          []MetaEvent{},
+		Permissions:     map[string]string{},
+		PermissionRepos: []string{},
+	}
 
 	lineNum := 0
 	for _, line := range strings.Split(content, "\n") {
@@ -173,6 +179,26 @@ func parseMeta(content string) (*Meta, error) {
 			}
 
 			res.Events = append(res.Events, event)
+		case "permission":
+			if len(directive.Args) != 3 {
+				return nil, errors.Errorf("line %d: 'permission' directive must have exactly two arguments", lineNum)
+			}
+			if len(directive.Conditions) != 0 {
+				return nil, errors.Errorf("line %d: 'permission' directive cannot have conditions", lineNum)
+			}
+
+			res.Permissions[directive.Args[1]] = directive.Args[2]
+		case "permission_repo":
+			if len(directive.Args) != 2 {
+				return nil, errors.Errorf("line %d: 'permission_repo' directive must have exactly one argument", lineNum)
+			}
+			if len(directive.Conditions) != 0 {
+				return nil, errors.Errorf("line %d: 'permission_repo' directive cannot have conditions", lineNum)
+			}
+
+			res.PermissionRepos = append(res.PermissionRepos, directive.Args[1])
+		default:
+			return nil, errors.Errorf("line %d: unknown directive '%s'", lineNum, directive.Args[0])
 		}
 	}
 

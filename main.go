@@ -62,9 +62,11 @@ type Event struct {
 
 type Job struct {
 	*Event
-	ID     string
-	Name   string
-	Script string
+	ID              string
+	Name            string
+	Script          string
+	Permissions     map[string]string
+	PermissionRepos []string
 }
 
 func main() {

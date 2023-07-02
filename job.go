@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"syscall"
 
+	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/content"
@@ -94,7 +96,7 @@ func (s *Service) runJob(ctx context.Context, job *Job) {
 }
 
 func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, logs *os.File) error {
-	token, err := s.getRepoToken(ctx, job.InstallationID, *job.Repo.ID)
+	token, err := s.getRepoToken(ctx, job)
 	if err != nil {
 		return err
 	}
@@ -178,6 +180,21 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 	buf.WriteString("machine github.com\nlogin x-access-token\npassword ")
 	buf.WriteString(token)
 	err = os.WriteFile(filepath.Join(home, ".netrc"), buf.Bytes(), 0600)
+	if err != nil {
+		return err
+	}
+
+	buf = bytes.NewBuffer(nil)
+	buf.WriteString(`
+[user]
+email = ci@embassy.dev
+name = Embassy CI
+[init]
+defaultBranch = main
+[advice]
+detachedHead = false
+`)
+	err = os.WriteFile(filepath.Join(home, ".gitconfig"), buf.Bytes(), 0600)
 	if err != nil {
 		return err
 	}
@@ -281,7 +298,7 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 
 	log.Println("starting task")
 
-	// start the redis-server process inside the container
+	// start the process inside the container
 	err = task.Start(ctx)
 	if err != nil {
 		return err
@@ -369,4 +386,68 @@ func removeSymlinks(path string) error {
 		}
 		return os.Remove(path)
 	})
+}
+
+func (s *Service) getRepoToken(ctx context.Context, job *Job) (string, error) {
+	var permissions = github.InstallationPermissions{
+		Metadata: github.String("read"),
+		Contents: github.String("read"),
+	}
+	var repositories = []string{
+		*job.Repo.Name,
+	}
+
+	if job.Trusted {
+		for key, value := range job.Permissions {
+			if value != "read" && value != "write" {
+				return "", errors.Errorf("invalid permission %q for %q", value, key)
+			}
+
+			switch key {
+			case "actions":
+				permissions.Actions = github.String(value)
+			case "checks":
+				permissions.Checks = github.String(value)
+			case "contents":
+				permissions.Contents = github.String(value)
+			case "deployments":
+				permissions.Deployments = github.String(value)
+			case "issues":
+				permissions.Issues = github.String(value)
+			case "packages":
+				permissions.Packages = github.String(value)
+			case "pages":
+				permissions.Pages = github.String(value)
+			case "pull_requests":
+				permissions.PullRequests = github.String(value)
+			case "repository_projects":
+				permissions.RepositoryProjects = github.String(value)
+			case "security_events":
+				permissions.SecurityEvents = github.String(value)
+			case "statuses":
+				permissions.Statuses = github.String(value)
+			default:
+				return "", errors.Errorf("Unknown permission: %q", key)
+			}
+		}
+
+		repositories = append(repositories, job.PermissionRepos...)
+	}
+
+	itr, err := ghinstallation.New(http.DefaultTransport, s.config.Github.AppID, job.InstallationID, []byte(s.config.Github.PrivateKey))
+	itr.InstallationTokenOptions = &github.InstallationTokenOptions{
+		Permissions:  &permissions,
+		Repositories: repositories,
+	}
+
+	if err != nil {
+		return "", errors.Errorf("Failed to create ghinstallation: %w", err)
+	}
+
+	token, err := itr.Token(ctx)
+	if err != nil {
+		return "", errors.Errorf("Failed to get repo token: %w", err)
+	}
+
+	return token, nil
 }

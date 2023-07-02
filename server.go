@@ -244,10 +244,12 @@ func (s *Service) handleEvent(ctx context.Context, gh *github.Client, event *Eve
 
 		if matched {
 			jobs = append(jobs, &Job{
-				ID:     makeJobID(),
-				Event:  event,
-				Name:   removeExtension(*f.Name),
-				Script: *f.Path,
+				ID:              makeJobID(),
+				Event:           event,
+				Name:            removeExtension(*f.Name),
+				Script:          *f.Path,
+				Permissions:     meta.Permissions,
+				PermissionRepos: meta.PermissionRepos,
 			})
 		}
 	}

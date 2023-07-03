@@ -373,14 +373,14 @@ func (s *Service) postComment(ctx context.Context, job *Job, gh *github.Client, 
 	}
 
 	commentPath := filepath.Join(home, "comment.md")
-	stat, err := os.Stat(commentPath)
+	stat, err := os.Lstat(commentPath)
 	if os.IsNotExist(err) {
 		return nil
 	} else if err != nil {
 		return err
 	}
 
-	if stat.IsDir() {
+	if stat.IsDir() || stat.Mode()&os.ModeSymlink == os.ModeSymlink {
 		return nil
 	}
 

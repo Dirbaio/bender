@@ -199,6 +199,15 @@ detachedHead = false
 		return err
 	}
 
+	j, err := json.Marshal(job)
+	if err != nil {
+		return err
+	}
+	err = os.WriteFile(filepath.Join(home, "job.json"), j, 0600)
+	if err != nil {
+		return err
+	}
+
 	buf = bytes.NewBuffer(nil)
 	buf.WriteString("#!/bin/bash\n")
 	buf.WriteString("set -euxo pipefail\n")

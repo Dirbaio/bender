@@ -40,33 +40,33 @@ type Service struct {
 }
 
 type Event struct {
-	Event      string // "push", "pull_request"
-	Attributes map[string]string
+	Event      string            `json:"event"`
+	Attributes map[string]string `json:"-"`
 
-	Repo           *github.Repository
-	PullRequest    *github.PullRequest
-	CloneURL       string
-	SHA            string
-	InstallationID int64
+	Repo           *github.Repository  `json:"repository"`
+	PullRequest    *github.PullRequest `json:"pull_request"`
+	CloneURL       string              `json:"-"`
+	SHA            string              `json:"-"`
+	InstallationID int64               `json:"-"`
 
 	// Cache[0] is the primary cache, Cache[1:] are secondary caches
 	// that will be cloned into the primary cache if the primary cache
 	// does not exist.
 	// Example for PR 1234, which targets the foo branch:
 	//    "pr-1234", "branch-foo", "branch-main"
-	Cache []string
+	Cache []string `json:"-"`
 
 	// If true, secrets will be mounted.
-	Trusted bool
+	Trusted bool `json:"-"`
 }
 
 type Job struct {
 	*Event
-	ID              string
-	Name            string
-	Script          string
-	Permissions     map[string]string
-	PermissionRepos []string
+	ID              string            `json:"id"`
+	Name            string            `json:"name"`
+	Script          string            `json:"-"`
+	Permissions     map[string]string `json:"-"`
+	PermissionRepos []string          `json:"-"`
 }
 
 func main() {

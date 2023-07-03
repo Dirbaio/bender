@@ -131,6 +131,13 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 
 	log.Println("creating container")
 
+	// Create artifacts dir
+	artifactsDir := filepath.Join(s.config.DataDir, "artifacts", job.ID)
+	err = os.MkdirAll(artifactsDir, 0700)
+	if err != nil {
+		return err
+	}
+
 	// Create cache dir
 	cacheDir := filepath.Join(s.config.DataDir, "cache", *job.Repo.Owner.Login, *job.Repo.Name, job.Name)
 	err = os.MkdirAll(cacheDir, 0700)
@@ -231,6 +238,12 @@ detachedHead = false
 			Type:        "none",
 			Source:      filepath.Join(cacheDir, cacheName),
 			Destination: "/ci/cache",
+			Options:     []string{"rbind"},
+		},
+		{
+			Type:        "none",
+			Source:      artifactsDir,
+			Destination: "/ci/artifacts",
 			Options:     []string{"rbind"},
 		},
 	}

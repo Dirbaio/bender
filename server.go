@@ -22,6 +22,8 @@ func (s *Service) serverRun() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Get("/jobs/{jobID}", s.HandleJobLogs)
+	r.Get("/jobs/{jobID}/artifacts", http.RedirectHandler("artifacts/", http.StatusMovedPermanently).ServeHTTP)
+	r.Get("/jobs/{jobID}/artifacts/*", s.HandleJobArtifacts)
 	r.Post("/webhook", func(w http.ResponseWriter, r *http.Request) {
 		err := s.handleWebhook(r)
 		if err != nil {
@@ -39,6 +41,18 @@ func (s *Service) serverRun() {
 func validJobID(id string) bool {
 	ok, err := regexp.MatchString("^[a-z0-9]+$", id)
 	return err == nil && ok
+}
+
+func (s *Service) HandleJobArtifacts(w http.ResponseWriter, r *http.Request) {
+	jobID := chi.URLParam(r, "jobID")
+	if !validJobID(jobID) {
+		log.Printf("invalid job ID: '%s'", jobID)
+		http.Error(w, http.StatusText(404), 404)
+		return
+	}
+
+	// serve files from data/artifacts/<jobID>/
+	http.StripPrefix("/jobs/"+jobID+"/artifacts/", http.FileServer(http.Dir(filepath.Join(s.config.DataDir, "artifacts", jobID)))).ServeHTTP(w, r)
 }
 
 func (s *Service) HandleJobLogs(w http.ResponseWriter, r *http.Request) {

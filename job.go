@@ -123,13 +123,6 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 
 	log.Println("creating container")
 
-	// Create artifacts dir
-	artifactsDir := filepath.Join(s.config.DataDir, "artifacts", job.ID)
-	err = os.MkdirAll(artifactsDir, 0700)
-	if err != nil {
-		return err
-	}
-
 	// Create job dir
 	jobDir := filepath.Join(s.config.DataDir, "jobs", job.ID)
 	err = os.MkdirAll(jobDir, 0700)
@@ -186,6 +179,12 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 	}()
 
 	// Setup home dir
+	jobArtifactsDir := filepath.Join(home, "artifacts")
+	err = os.MkdirAll(jobArtifactsDir, 0700)
+	if err != nil {
+		return err
+	}
+
 	buf := bytes.NewBuffer(nil)
 	buf.WriteString("machine github.com\nlogin x-access-token\npassword ")
 	buf.WriteString(token)
@@ -241,12 +240,6 @@ detachedHead = false
 			Type:        "none",
 			Source:      jobCacheDir,
 			Destination: "/ci/cache",
-			Options:     []string{"rbind"},
-		},
-		{
-			Type:        "none",
-			Source:      artifactsDir,
-			Destination: "/ci/artifacts",
 			Options:     []string{"rbind"},
 		},
 	}
@@ -337,6 +330,7 @@ detachedHead = false
 
 	status := <-statusC
 
+	// Commit cache
 	primary := job.Cache[0]
 	log.Printf("committing cache to primary %s", primary)
 	primaryPath := filepath.Join(cacheDir, primary)
@@ -355,6 +349,19 @@ detachedHead = false
 		log.Printf("failed to rename cache %s to %s: %v", jobCacheDir, primaryPath, err)
 	}
 
+	// Sanitize and publish artifacts
+	err = removeSymlinks(jobArtifactsDir)
+	if err != nil {
+		log.Printf("failed to remove symlinks in artifact dir: %v", err)
+	} else {
+		artifactsDir := filepath.Join(s.config.DataDir, "artifacts", job.ID)
+		err = os.Rename(jobArtifactsDir, artifactsDir)
+		if err != nil {
+			log.Printf("failed to rename artifact dir: %v", err)
+		}
+	}
+
+	// Post github comment
 	err = s.postComment(ctx, job, gh, home)
 	if err != nil {
 		log.Printf("failed to post github comment: %v", err)

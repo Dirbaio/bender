@@ -17,7 +17,6 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-github/v52/github"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -88,11 +87,6 @@ func (s *Service) runJob(ctx context.Context, job *Job) {
 	if err != nil {
 		log.Printf("error creating result status: %v", err)
 	}
-
-	err = os.RemoveAll(filepath.Join(s.config.DataDir, "jobs", job.ID))
-	if err != nil {
-		log.Printf("error deleting job homedir: %v", err)
-	}
 }
 
 func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, logs *os.File) error {
@@ -127,8 +121,6 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 		return err
 	}
 
-	spew.Dump(imageConfig.Config.Env)
-
 	log.Println("creating container")
 
 	// Create artifacts dir
@@ -138,14 +130,32 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 		return err
 	}
 
-	// Create cache dir
+	// Create job dir
+	jobDir := filepath.Join(s.config.DataDir, "jobs", job.ID)
+	err = os.MkdirAll(jobDir, 0700)
+	if err != nil {
+		return err
+	}
+	home := filepath.Join(jobDir, "home")
+	err = os.MkdirAll(home, 0700)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		log.Printf("deleting job dir: %s", jobDir)
+		err := os.RemoveAll(jobDir)
+		if err != nil {
+			log.Printf("error deleting job dir: %v", err)
+		}
+	}()
+
+	// Setup cache
 	cacheDir := filepath.Join(s.config.DataDir, "cache", *job.Repo.Owner.Login, *job.Repo.Name, job.Name)
 	err = os.MkdirAll(cacheDir, 0700)
 	if err != nil {
 		return err
 	}
 
-	// find existing cache
 	cacheBaseName := ""
 	for _, cache := range job.Cache {
 		log.Printf("checking cache %s", cache)
@@ -154,35 +164,28 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 			break
 		}
 	}
-	cacheName := fmt.Sprintf("job-%s", job.ID)
+	jobCacheDir := filepath.Join(jobDir, "cache")
 	if cacheBaseName == "" {
 		log.Printf("no base cache found")
-		err = doExec("btrfs", "subvolume", "create", filepath.Join(cacheDir, cacheName))
+		err = doExec("btrfs", "subvolume", "create", jobCacheDir)
 	} else {
 		log.Printf("using base cache %s", cacheBaseName)
-		err = doExec("btrfs", "subvolume", "snapshot", filepath.Join(cacheDir, cacheBaseName), filepath.Join(cacheDir, cacheName))
+		err = doExec("btrfs", "subvolume", "snapshot", filepath.Join(cacheDir, cacheBaseName), jobCacheDir)
 	}
 	if err != nil {
 		return err
 	}
-	doDeleteCache := true
 	defer func() {
-		if doDeleteCache {
-			log.Printf("deleting cache %s", cacheName)
-			err := doExec("btrfs", "subvolume", "delete", filepath.Join(cacheDir, cacheName))
+		if _, err := os.Stat(jobCacheDir); err == nil {
+			log.Printf("deleting cache %s", jobCacheDir)
+			err := doExec("btrfs", "subvolume", "delete", jobCacheDir)
 			if err != nil {
 				log.Printf("error deleting cache: %v", err)
 			}
 		}
 	}()
 
-	// Create home dir
-	home := filepath.Join(s.config.DataDir, "jobs", job.ID)
-	err = os.MkdirAll(home, 0700)
-	if err != nil {
-		return err
-	}
-
+	// Setup home dir
 	buf := bytes.NewBuffer(nil)
 	buf.WriteString("machine github.com\nlogin x-access-token\npassword ")
 	buf.WriteString(token)
@@ -236,7 +239,7 @@ detachedHead = false
 		},
 		{
 			Type:        "none",
-			Source:      filepath.Join(cacheDir, cacheName),
+			Source:      jobCacheDir,
 			Destination: "/ci/cache",
 			Options:     []string{"rbind"},
 		},
@@ -335,7 +338,7 @@ detachedHead = false
 	status := <-statusC
 
 	primary := job.Cache[0]
-	log.Printf("committing cache %s to primary %s", cacheName, primary)
+	log.Printf("committing cache to primary %s", primary)
 	primaryPath := filepath.Join(cacheDir, primary)
 	if _, err := os.Stat(primaryPath); err == nil {
 		err = doExec("btrfs", "subvolume", "delete", primaryPath)
@@ -347,11 +350,10 @@ detachedHead = false
 			}
 		}
 	}
-	err = os.Rename(filepath.Join(cacheDir, cacheName), primaryPath)
+	err = os.Rename(jobCacheDir, primaryPath)
 	if err != nil {
-		log.Printf("failed to rename cache %s to %s: %v", filepath.Join(cacheDir, cacheName), primaryPath, err)
+		log.Printf("failed to rename cache %s to %s: %v", jobCacheDir, primaryPath, err)
 	}
-	doDeleteCache = false
 
 	err = s.postComment(ctx, job, gh, home)
 	if err != nil {

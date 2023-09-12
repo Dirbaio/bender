@@ -46,6 +46,7 @@ func (c *DirectiveCondition) matches(attributes map[string]string) bool {
 }
 
 func parseDirective(src string) (*Directive, error) {
+	src = strings.TrimSpace(src)
 	whitespace := regexp.MustCompile("^[ \t\n]+")
 	item := "(\"(?:\\\\.|[^\\\\\\\"])*\"|[^ !~=;\t\n\"\\\\]*)"
 	condition := regexp.MustCompile("^" + item + "(=|!=|~=|!~=)" + item)

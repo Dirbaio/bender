@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/go-github/v52/github"
+	"github.com/sqlbunny/errors"
 )
 
 func (s *Service) serverRun() {
@@ -97,11 +99,24 @@ func (s *Service) HandleJobLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleWebhook(r *http.Request) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
 	payload, err := github.ValidatePayload(r, []byte(s.config.Github.WebhookSecret))
 	defer r.Body.Close()
 	if err != nil {
 		log.Printf("error validating request body: err=%s\n", err)
 		return nil
+	}
+
+	installationID, err := parseEventInstallationID(payload)
+	if err != nil {
+		log.Printf("could not get installation id from webhook: err=%s\n", err)
+		return nil
+	}
+	gh, err := s.githubClient(installationID)
+	if err != nil {
+		return err
 	}
 
 	ee, err := github.ParseWebHook(github.WebHookType(r), payload)
@@ -111,7 +126,6 @@ func (s *Service) handleWebhook(r *http.Request) error {
 	}
 
 	var events []*Event
-
 	switch e := ee.(type) {
 	case *github.PushEvent:
 		branch, ok := strings.CutPrefix(*e.Ref, "refs/heads/")
@@ -167,18 +181,19 @@ func (s *Service) handleWebhook(r *http.Request) error {
 				Trusted: *e.PullRequest.Head.Repo.Owner.Login == *e.Repo.Owner.Login,
 			})
 		}
+	case *github.IssueCommentEvent:
+		if *e.Action == "created" {
+			err := s.handleCommands(ctx, gh, &events, e)
+			if err != nil {
+				log.Printf("failed handling commands: %v", err)
+			}
+		}
 	}
 
 	if len(events) == 0 {
 		return nil
 	}
 
-	gh, err := s.githubClient(events[0].InstallationID)
-	if err != nil {
-		return err
-	}
-
-	ctx := context.Background()
 	for _, event := range events {
 		if event.CloneURL == "" {
 			event.CloneURL = *event.Repo.CloneURL
@@ -194,6 +209,93 @@ func (s *Service) handleWebhook(r *http.Request) error {
 	}
 
 	return nil
+}
+
+func (s *Service) handleCommands(ctx context.Context, gh *github.Client, outEvents *[]*Event, e *github.IssueCommentEvent) error {
+	errors := ""
+
+	for _, line := range strings.Split(*e.Comment.Body, "\n") {
+		command, ok := strings.CutPrefix(line, "bender ")
+		if !ok {
+			continue
+		}
+
+		err := s.handleCommand(ctx, gh, outEvents, e, command)
+		if err != nil {
+			log.Printf("Failed to handle command `%s`: %v", command, err)
+			errors += fmt.Sprintf("`%s`: %v\n", command, err)
+		}
+	}
+
+	if errors != "" {
+		_, _, err := gh.Issues.CreateComment(ctx, *e.Repo.Owner.Login, *e.Repo.Name, *e.Issue.Number, &github.IssueComment{
+			Body: github.String(errors),
+		})
+		if err != nil {
+			log.Printf("Failed to post comment with command errors: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) handleCommand(ctx context.Context, gh *github.Client, outEvents *[]*Event, e *github.IssueCommentEvent, command string) error {
+	dir, err := parseDirective(command)
+	if err != nil {
+		return err
+	}
+
+	if len(dir.Args) == 0 {
+		return errors.New("no command?")
+	}
+
+	switch dir.Args[0] {
+	case "run":
+		if len(dir.Args) != 1 || len(dir.Conditions) != 0 {
+			return errors.Errorf("'run' takes no arguments")
+		}
+
+		// check perms
+		perms, _, err := gh.Repositories.GetPermissionLevel(ctx, *e.Repo.Owner.Login, *e.Repo.Name, *e.Comment.User.Login)
+		if err != nil {
+			return err
+		}
+		if *perms.Permission != "admin" && *perms.Permission != "write" {
+			return errors.Errorf("permission denied")
+		}
+
+		// get PR
+		if e.Issue.PullRequestLinks == nil {
+			return errors.Errorf("This is not a pull request!")
+		}
+		pr, _, err := gh.PullRequests.Get(ctx, *e.Repo.Owner.Login, *e.Repo.Name, *e.Issue.Number)
+		if err != nil {
+			return err
+		}
+
+		*outEvents = append(*outEvents, &Event{
+			Event: "pull_request",
+			Attributes: map[string]string{
+				"branch": *pr.Base.Ref,
+			},
+			Repo:           e.Repo,
+			PullRequest:    pr,
+			CloneURL:       *pr.Head.Repo.CloneURL,
+			SHA:            *pr.Head.SHA,
+			InstallationID: *e.Installation.ID,
+			Cache: []string{
+				fmt.Sprintf("pr-%d", *pr.Number),
+				fmt.Sprintf("branch-%s", *pr.Base.Ref),
+				fmt.Sprintf("branch-%s", *e.Repo.DefaultBranch),
+			},
+
+			// Trusted if the PR is not from a fork.
+			Trusted: *pr.Head.Repo.Owner.Login == *e.Repo.Owner.Login,
+		})
+		return nil
+	default:
+		return errors.Errorf("unknown command '%s'", dir.Args[0])
+	}
 }
 
 func (s *Service) handleEvent(ctx context.Context, gh *github.Client, event *Event) error {
@@ -273,4 +375,24 @@ func (s *Service) handleEvent(ctx context.Context, gh *github.Client, event *Eve
 	}
 
 	return nil
+}
+
+func parseEventInstallationID(payload []byte) (int64, error) {
+	type Installation struct {
+		ID *int64 `json:"id"`
+	}
+	type Event struct {
+		Installation Installation `json:"installation"`
+	}
+
+	var e Event
+	if err := json.Unmarshal(payload, &e); err != nil {
+		return 0, err
+	}
+
+	if e.Installation.ID == nil {
+		return 0, errors.New("no installation id in event")
+	}
+
+	return *e.Installation.ID, nil
 }

@@ -19,6 +19,12 @@ type Config struct {
 	NetSandbox  *NetSandboxConfig `yaml:"net_sandbox"`
 	Image       string            `yaml:"image"`
 	Github      GithubConfig      `yaml:"github"`
+	Cache       CacheConfig       `yaml:"cache"`
+}
+
+type CacheConfig struct {
+	MinFreeSpaceMB int `yaml:"min_free_space_mb"`
+	MaxSizeMB      int `yaml:"max_size_mb"`
 }
 
 type NetSandboxConfig struct {
@@ -78,7 +84,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var config Config
+	config := Config{
+		ListenPort: 8000,
+		Cache: CacheConfig{
+			MinFreeSpaceMB: 20 * 1024, // 20gb
+			MaxSizeMB:      40 * 1024, // 40gb
+		},
+	}
 	err = yaml.Unmarshal(configData, &config)
 	if err != nil {
 		log.Fatal(err)
@@ -109,6 +121,8 @@ func main() {
 	if s.config.NetSandbox != nil {
 		go s.netRun()
 	}
+
+	go s.cacheGCRun()
 
 	s.serverRun()
 }

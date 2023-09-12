@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/containerd/containerd"
@@ -163,7 +164,15 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 		err = doExec("btrfs", "subvolume", "create", jobCacheDir)
 	} else {
 		log.Printf("using base cache %s", cacheBaseName)
-		err = doExec("btrfs", "subvolume", "snapshot", filepath.Join(cacheDir, cacheBaseName), jobCacheDir)
+		baseCacheDir := filepath.Join(cacheDir, cacheBaseName)
+
+		// Touch base cache, to let cache GC know it's recently used.
+		now := time.Now().Local()
+		err = os.Chtimes(baseCacheDir, now, now)
+		if err != nil {
+			return err
+		}
+		err = doExec("btrfs", "subvolume", "snapshot", baseCacheDir, jobCacheDir)
 	}
 	if err != nil {
 		return err
@@ -331,22 +340,34 @@ detachedHead = false
 	status := <-statusC
 
 	// Commit cache
-	primary := job.Cache[0]
-	log.Printf("committing cache to primary %s", primary)
-	primaryPath := filepath.Join(cacheDir, primary)
-	if _, err := os.Stat(primaryPath); err == nil {
-		err = doExec("btrfs", "subvolume", "delete", primaryPath)
-		if err != nil {
-			log.Printf("failed to remove old primary cache %s: %v. Trying `rm -rf`", primaryPath, err)
-			err = os.RemoveAll(primaryPath)
+	cacheSize, err := dirSize(jobCacheDir)
+	if err != nil {
+		log.Printf("failed to calc cache size: %v", err)
+	} else {
+		log.Printf("cache size: %d MB", cacheSize/1024/1024)
+
+		primary := job.Cache[0]
+		log.Printf("committing cache to primary %s", primary)
+		primaryPath := filepath.Join(cacheDir, primary)
+		if _, err := os.Stat(primaryPath); err == nil {
+			err = doExec("btrfs", "subvolume", "delete", primaryPath)
 			if err != nil {
-				log.Printf("failed to remove old primary cache %s with `rm -rf`: %v", primaryPath, err)
+				log.Printf("failed to remove old primary cache %s: %v. Trying `rm -rf`", primaryPath, err)
+				err = os.RemoveAll(primaryPath)
+				if err != nil {
+					log.Printf("failed to remove old primary cache %s with `rm -rf`: %v", primaryPath, err)
+				}
 			}
 		}
-	}
-	err = os.Rename(jobCacheDir, primaryPath)
-	if err != nil {
-		log.Printf("failed to rename cache %s to %s: %v", jobCacheDir, primaryPath, err)
+
+		if cacheSize < int64(s.config.Cache.MaxSizeMB)*1024*1024 {
+			err = os.Rename(jobCacheDir, primaryPath)
+			if err != nil {
+				log.Printf("failed to rename cache %s to %s: %v", jobCacheDir, primaryPath, err)
+			}
+		} else {
+			log.Printf("deleting cache becase it's larger than cache.max_size_mb (%d)", s.config.Cache.MaxSizeMB)
+		}
 	}
 
 	// Sanitize and publish artifacts
@@ -481,4 +502,18 @@ func (s *Service) getRepoToken(ctx context.Context, job *Job) (string, error) {
 	}
 
 	return token, nil
+}
+
+func dirSize(path string) (int64, error) {
+	var size int64
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return err
+	})
+	return size, err
 }

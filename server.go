@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -72,29 +73,69 @@ func (s *Service) HandleJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Add("Content-Type", "text/plain")
+	w.Header().Add("Content-Type", "text/html; charset=utf-8")
+	w.Header().Add("X-Content-Type-Options", "nosniff")
 
+	buf := make([]byte, 32*1024)
+
+	if s.isJobRunning(jobID) {
+		// padding to make browsers instantly start rendering the document
+		// as it arrives from the network. Browsers seem to wait until a minimum
+		// of data has been received before rendering anything...
+		for i := range buf {
+			buf[i] = ' '
+		}
+		w.Write(buf)
+	}
+
+	io.WriteString(w, `
+	<!DOCTYPE html>
+	<html>
+		<head>
+			<title>lol job</title>
+			<style type="text/css">
+				#main {
+					overflow-anchor: none;
+					font-family: monospace;
+					white-space: pre;
+				}
+				body::after {
+					overflow-anchor: auto;
+					content: "   ";
+					display: block;
+					height: 1px;
+				}
+			</style>
+		</head>
+		<body>
+			<div id="main">`)
 	for {
-		n, err := io.Copy(w, f)
+		n, err := f.Read(buf)
+		if err != nil {
+			log.Printf("failed to read logs: %v", err)
+			http.Error(w, http.StatusText(500), 500)
+			return
+		}
+
+		if n == 0 {
+			if !s.isJobRunning(jobID) {
+				return
+			}
+
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		escaped := html.EscapeString(string(buf[:n]))
+		_, err = io.WriteString(w, escaped)
 		if err != nil {
 			log.Printf("failed to send logs: %v", err)
 			http.Error(w, http.StatusText(500), 500)
 			return
 		}
-
-		if !s.isJobRunning(jobID) {
-			return
-		}
-
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
-
-		d := time.Second
-		if n != 0 {
-			d = 200 * time.Millisecond
-		}
-		time.Sleep(d)
 	}
 }
 

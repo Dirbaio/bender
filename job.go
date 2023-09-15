@@ -154,8 +154,22 @@ func (s *Service) runJobInner(ctx context.Context, job *Job, gh *github.Client, 
 	for _, cache := range job.Cache {
 		log.Printf("checking cache %s", cache)
 		if stat, err := os.Stat(filepath.Join(cacheDir, cache)); err == nil && stat.IsDir() {
+			cacheSize, err := dirSize(filepath.Join(cacheDir, cache))
+			if err != nil {
+				log.Printf("failed to calc cache size: %v", err)
+				continue
+			}
+
+			log.Printf("cache %s size: %d MB", cache, cacheSize/1024/1024)
+			if cacheSize > int64(s.config.Cache.MaxSizeMB)*1024*1024 {
+				log.Printf("cache %s too big, ignoring it", cache)
+			}
+
 			cacheBaseName = cache
 			break
+		} else {
+			log.Printf("cache %s not found", cache)
+
 		}
 	}
 	jobCacheDir := filepath.Join(jobDir, "cache")
@@ -340,34 +354,23 @@ detachedHead = false
 	status := <-statusC
 
 	// Commit cache
-	cacheSize, err := dirSize(jobCacheDir)
+	primary := job.Cache[0]
+	log.Printf("committing cache to primary %s", primary)
+	primaryPath := filepath.Join(cacheDir, primary)
+	if _, err := os.Stat(primaryPath); err == nil {
+		err = doExec("btrfs", "subvolume", "delete", primaryPath)
+		if err != nil {
+			log.Printf("failed to remove old primary cache %s: %v. Trying `rm -rf`", primaryPath, err)
+			err = os.RemoveAll(primaryPath)
+			if err != nil {
+				log.Printf("failed to remove old primary cache %s with `rm -rf`: %v", primaryPath, err)
+			}
+		}
+	}
+
+	err = os.Rename(jobCacheDir, primaryPath)
 	if err != nil {
-		log.Printf("failed to calc cache size: %v", err)
-	} else {
-		log.Printf("cache size: %d MB", cacheSize/1024/1024)
-
-		primary := job.Cache[0]
-		log.Printf("committing cache to primary %s", primary)
-		primaryPath := filepath.Join(cacheDir, primary)
-		if _, err := os.Stat(primaryPath); err == nil {
-			err = doExec("btrfs", "subvolume", "delete", primaryPath)
-			if err != nil {
-				log.Printf("failed to remove old primary cache %s: %v. Trying `rm -rf`", primaryPath, err)
-				err = os.RemoveAll(primaryPath)
-				if err != nil {
-					log.Printf("failed to remove old primary cache %s with `rm -rf`: %v", primaryPath, err)
-				}
-			}
-		}
-
-		if cacheSize < int64(s.config.Cache.MaxSizeMB)*1024*1024 {
-			err = os.Rename(jobCacheDir, primaryPath)
-			if err != nil {
-				log.Printf("failed to rename cache %s to %s: %v", jobCacheDir, primaryPath, err)
-			}
-		} else {
-			log.Printf("deleting cache becase it's larger than cache.max_size_mb (%d)", s.config.Cache.MaxSizeMB)
-		}
+		log.Printf("failed to rename cache %s to %s: %v", jobCacheDir, primaryPath, err)
 	}
 
 	// Sanitize and publish artifacts

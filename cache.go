@@ -11,7 +11,7 @@ import (
 
 func (s *Service) cacheGCRun() {
 	for {
-		time.Sleep(time.Minute)
+		time.Sleep(20 * time.Second)
 		s.deleteOldestCache()
 	}
 }

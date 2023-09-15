@@ -111,7 +111,7 @@ func (s *Service) HandleJobLogs(w http.ResponseWriter, r *http.Request) {
 			<div id="main">`)
 	for {
 		n, err := f.Read(buf)
-		if err != nil {
+		if err != nil && !errors.Is(err, io.EOF) {
 			log.Printf("failed to read logs: %v", err)
 			http.Error(w, http.StatusText(500), 500)
 			return

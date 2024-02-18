@@ -217,9 +217,7 @@ func (s *Service) handleWebhook(r *http.Request) error {
 					fmt.Sprintf("branch-%s", *e.PullRequest.Base.Ref),
 					fmt.Sprintf("branch-%s", *e.Repo.DefaultBranch),
 				},
-
-				// Trusted if the PR is not from a fork.
-				Trusted: *e.PullRequest.Head.Repo.Owner.Login == *e.Repo.Owner.Login,
+				Trusted: isPRTrusted(e.Repo, e.PullRequest),
 			})
 		}
 	case *github.IssueCommentEvent:
@@ -329,9 +327,7 @@ func (s *Service) handleCommand(ctx context.Context, gh *github.Client, outEvent
 				fmt.Sprintf("branch-%s", *pr.Base.Ref),
 				fmt.Sprintf("branch-%s", *e.Repo.DefaultBranch),
 			},
-
-			// Trusted if the PR is not from a fork.
-			Trusted: *pr.Head.Repo.Owner.Login == *e.Repo.Owner.Login,
+			Trusted: isPRTrusted(e.Repo, pr),
 		})
 		return nil
 	default:
@@ -436,4 +432,20 @@ func parseEventInstallationID(payload []byte) (int64, error) {
 	}
 
 	return *e.Installation.ID, nil
+}
+
+func isPRTrusted(repo *github.Repository, pr *github.PullRequest) bool {
+	// Trusted if the PR is not from a fork.
+	if *pr.Head.Repo.Owner.Login == *repo.Owner.Login {
+		return true
+	}
+
+	// Trusted if the PR has a "trusted" label
+	for _, l := range pr.Labels {
+		if l.Name != nil && *l.Name == "trusted" {
+			return true
+		}
+	}
+
+	return false
 }

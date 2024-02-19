@@ -43,6 +43,8 @@ type Service struct {
 
 	runningJobsMutex sync.Mutex
 	runningJobs      map[string]struct{}
+
+	cgroup Cgroup
 }
 
 type Event struct {
@@ -112,10 +114,13 @@ func main() {
 		log.Fatal(err)
 	}
 
+	cgroup := initCgroup()
+
 	s := Service{
 		config:      config,
 		containerd:  cntd,
 		runningJobs: make(map[string]struct{}),
+		cgroup:      cgroup,
 	}
 
 	if s.config.NetSandbox != nil {

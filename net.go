@@ -110,8 +110,11 @@ func (s *Service) netRun() {
 }
 
 func (s *Service) setupNftables() {
+	cgroupPath := strings.TrimLeft(s.cgroup.jobs, "/")
+	cgroupLevel := strings.Count(cgroupPath, "/") + 1
+
 	c := exec.Command("nft", "-f", "-")
-	c.Stdin = strings.NewReader(`
+	c.Stdin = strings.NewReader(fmt.Sprintf(`
 		table inet bender 
 		delete table inet bender
 		
@@ -123,7 +126,7 @@ func (s *Service) setupNftables() {
 		
 			chain output {
 				type filter hook output priority 0; policy accept;
-				socket cgroupv2 level 1 "bender" goto bender-output
+				socket cgroupv2 level %d "%s" goto bender-output
 			}
 		
 			chain bender-output {
@@ -132,7 +135,7 @@ func (s *Service) setupNftables() {
 				reject with icmp type host-prohibited
 			}
 		}
-	`)
+	`, cgroupLevel, cgroupPath))
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
 	err := c.Run()

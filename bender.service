@@ -10,10 +10,19 @@ RestartSec=1
 User=ci
 WorkingDirectory=/home/ci
 ExecStart=/home/ci/bender
-ExecStartPre=+/usr/bin/mkdir -p /sys/fs/cgroup/bender
 AmbientCapabilities=CAP_NET_ADMIN
 AmbientCapabilities=CAP_NET_RAW
 AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+Delegate=yes
+
+CPUAccounting=yes
+
+MemoryAccounting=yes
+MemoryHigh=14G
+MemoryMax=14.5G
+ManagedOOMMemoryPressure=kill
+ManagedOOMSwap=kill
 
 [Install]
 WantedBy=multi-user.target

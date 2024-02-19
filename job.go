@@ -298,7 +298,11 @@ detachedHead = false
 		})
 	}
 
-	container, err := s.containerd.NewContainer(ctx, fmt.Sprintf("job-%s", job.ID),
+	// setup cgroup
+	jobName := fmt.Sprintf("job-%s", job.ID)
+	cgroup := filepath.Join(s.cgroup.jobs, jobName)
+
+	container, err := s.containerd.NewContainer(ctx, jobName,
 		containerd.WithNewSnapshot(fmt.Sprintf("job-%s-rootfs", job.ID), image),
 		containerd.WithNewSpec(
 			oci.WithProcessArgs("/bin/bash", "-c", "./entrypoint.sh 2>&1"),
@@ -309,7 +313,7 @@ detachedHead = false
 			oci.WithEnv([]string{
 				"HOME=/ci",
 			}),
-			oci.WithNamespacedCgroup(),
+			oci.WithCgroup(cgroup),
 			oci.WithHostNamespace(specs.NetworkNamespace), // TODO network sandboxing
 			oci.WithMounts(mounts),
 		),

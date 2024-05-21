@@ -2,8 +2,9 @@
 
 set -euxo pipefail
 
-HOST=root@192.168.1.4
+HOST=root@git.akiles.xyz
+PORT=7022
 
 IMAGE=embassy.dev/ci
 docker build -t $IMAGE image
-docker save $IMAGE | pv | ssh $HOST -- ctr -n=bender images import /dev/stdin
+docker save $IMAGE | pv | ssh -p $PORT $HOST -- ctr -n=bender images import /dev/stdin

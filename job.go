@@ -312,6 +312,7 @@ detachedHead = false
 			oci.WithEnv(imageConfig.Config.Env),
 			oci.WithEnv([]string{
 				"HOME=/ci",
+				"GITHUB_TOKEN=" + token,
 			}),
 			oci.WithCgroup(cgroup),
 			oci.WithHostNamespace(specs.NetworkNamespace), // TODO network sandboxing

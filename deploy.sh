@@ -4,7 +4,7 @@ set -euxo pipefail
 
 CGO_ENABLED=0 go build
 
-HOST=root@git.akiles.xyz
+HOST=root@bcnma.akiles.xyz
 PORT=7022
 
 ssh -p $PORT $HOST -- systemctl stop bender
